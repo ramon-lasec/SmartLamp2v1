@@ -34,11 +34,14 @@
 
 #include "wiced.h"
 #include "string.h"
+#include "stdbool.h"
+#include "stdint.h"
+#include "stdio.h"
 
 /******************************************************
  *                      Macros
  ******************************************************/
-
+#define VERSION "Version 1.0.0\r\n"
 /******************************************************
  *                    Constants
  ******************************************************/
@@ -49,7 +52,6 @@
 #define TCP_CLIENT_CONNECT_TIMEOUT        5000
 #define TCP_CLIENT_RECEIVE_TIMEOUT        5000
 #define TCP_CONNECTION_NUMBER_OF_RETRIES  3
-#define RX_BUFFER_SIZE                    5
 #define TIMER_TIME (8000)
 
 /* Change the server IP address to match the TCP echo server address */
@@ -76,6 +78,46 @@ static const wiced_ip_setting_t device_init_ip_settings =
     INITIALISER_IPV4_ADDRESS( .gateway,    MAKE_IPV4_ADDRESS(10,10,84,1) ),
 };
 
+
+/*
+ * UART
+ */
+#define BUFFER_SIZE    64
+#define TEST_STR          "\r\nType something! Keystrokes are echoed to the terminal ...>\r\n"
+
+#define        ERROR "No Value\r\n"
+#define        TIMEOUT "TIMEOUT\r\n"
+
+wiced_uart_config_t uart_config =
+{
+    .baud_rate    = 115200,
+    .data_width   = DATA_WIDTH_8BIT,
+    .parity       = NO_PARITY,
+    .stop_bits    = STOP_BITS_1,
+    .flow_control = FLOW_CONTROL_DISABLED,
+};
+
+wiced_ring_buffer_t rx_buffer1;
+wiced_ring_buffer_t tx_buffer1;
+
+wiced_ring_buffer_t rx_buffer2;
+wiced_ring_buffer_t tx_buffer2;
+
+uint8_t             rx_data1[BUFFER_SIZE];
+uint8_t             tx_data1[BUFFER_SIZE];
+
+uint8_t             rx_data2[BUFFER_SIZE];
+uint8_t             tx_data2[BUFFER_SIZE];
+
+uint8_t             write_buffer_cnt_width;
+uint8_t rx_data1_cont;
+
+
+uint32_t    expected_data_size = 1;
+    char        TX;
+    char        RX;
+
+DEFINE_RING_BUFFER_DATA( uint8_t, rx_data, BUFFER_SIZE);
 /******************************************************
  *                   Enumerations
  ******************************************************/
@@ -95,8 +137,10 @@ static const wiced_ip_setting_t device_init_ip_settings =
 //static wiced_result_t tcp_client();
 static wiced_result_t tcp_client( void );
 static wiced_result_t wifi_init(void);
+static wiced_result_t uart_init(void);
 void button_B(void* arg);
 void button_h(void* arg);
+void manager_uart(void);
 
 /******************************************************
  *               Variable Definitions
@@ -123,6 +167,7 @@ void application_start(void)
     wiced_gpio_output_high( WICED_LED2 );
     wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL); /* Setup interrupt */
     /* Initialize the device and WICED framework */
+    uart_init();
     wiced_init();
 
     while(1)
@@ -159,6 +204,8 @@ void application_start(void)
             wiced_rtos_delay_milliseconds( TCP_CLIENT_INTERVAL * SECONDS );
             wiced_network_resume();
         }
+
+        manager_uart();
     }
 }
 
@@ -391,3 +438,81 @@ void button_B(void* arg)
     return;
 }
 
+static wiced_result_t uart_init(void)
+{
+        /* Initialise ring buffer */
+        //ring_buffer_init(&rx_buffer, rx_data, RX_BUFFER_SIZE );
+        ring_buffer_init(&rx_buffer1, rx_data1, BUFFER_SIZE ); /* Initialize ring buffer to hold receive data */
+        ring_buffer_init(&rx_buffer2, rx_data2, BUFFER_SIZE ); /* Initialize ring buffer to hold receive data */
+
+        /* Initialise UART. A ring buffer is used to hold received characters */
+       // wiced_uart_init( STDIO_UART, &uart_config, &rx_buffer );
+
+        wiced_uart_init( WICED_UART_1, &uart_config, &rx_buffer1); /* Setup UART */
+        wiced_uart_init( WICED_UART_2, &uart_config, &rx_buffer2); /* Setup UART */
+
+        /* Send a test string to the terminal */
+        //wiced_uart_transmit_bytes( STDIO_UART, TEST_STR, sizeof( TEST_STR ) - 1 );
+        wiced_uart_transmit_bytes( WICED_UART_1, TEST_STR, sizeof( TEST_STR ) - 1 );
+        wiced_uart_transmit_bytes( WICED_UART_2, TEST_STR, sizeof( TEST_STR ) - 1 );
+
+}
+
+void manager_uart(void)
+{
+
+
+/*INICIO*/
+/*
+    if ( wiced_uart_receive_bytes( WICED_UART_1, &TX, &expected_data_size, WICED_NEVER_TIMEOUT ) == WICED_SUCCESS )
+    {
+                wiced_uart_transmit_bytes(WICED_UART_2, TX,1);
+    }
+
+
+    if ( wiced_uart_receive_bytes( WICED_UART_2, &RX, &expected_data_size, 5000 ) == WICED_SUCCESS )
+    {
+        if(RX == TX)
+        {
+            wiced_uart_transmit_bytes(WICED_UART_1, ERROR, 8);
+        }
+        else
+        {
+            wiced_uart_transmit_bytes(WICED_UART_1, &RX, 1);
+        }
+    }
+            //else return;
+*/
+/* FIN */
+
+    /*
+    memset(rx_data1,'\0',BUFFER_SIZE);
+    if ( wiced_uart_receive_bytes( WICED_UART_1, &rx_data1,4, WICED_NEVER_TIMEOUT ) == WICED_SUCCESS )
+    {
+
+            wiced_uart_transmit_bytes(WICED_UART_2, &rx_data1,4);
+
+    }
+*/
+    /*
+    if ( wiced_uart_receive_bytes( WICED_UART_2, &rx_data2, &expected_data_size, WICED_NEVER_TIMEOUT ) == WICED_SUCCESS )
+    {
+                wiced_uart_transmit_bytes(WICED_UART_1, &rx_data2,expected_data_size);
+                //memset(rx_data2,'\0',BUFFER_SIZE);
+
+    }
+*/
+
+    if ( wiced_uart_receive_bytes( WICED_UART_1, &TX, &expected_data_size, WICED_NEVER_TIMEOUT ) == WICED_SUCCESS )
+    {
+        rx_data1[rx_data1_cont++]=TX;
+        if(TX == '\n')
+        {
+            wiced_uart_transmit_bytes(WICED_UART_2, &rx_data1, rx_data1_cont-1);
+            rx_data1_cont = 0x00;
+            memset(rx_data1,'\0',BUFFER_SIZE);
+        }
+
+    }
+
+}
