@@ -35,12 +35,12 @@ extern "C"
 #define SOFT_AP_PASSPHRASE   "12345678"
 
 /* This is the default AP the device will connect to (as a client)*/
-#define CLIENT_AP_SSID       "Lasec"
-#define CLIENT_AP_PASSPHRASE "T3L3C0M2018--"
+#define CLIENT_AP_SSID       "sf sf"
+#define CLIENT_AP_PASSPHRASE "D3_lasec2020.,oo"
 #define CLIENT_AP_BSS_TYPE   WICED_BSS_TYPE_INFRASTRUCTURE
 #define CLIENT_AP_SECURITY   WICED_SECURITY_WPA2_MIXED_PSK
 #define CLIENT_AP_CHANNEL    1
-#define CLIENT_AP_BAND       WICED_802_11_BAND_5GHZ
+#define CLIENT_AP_BAND       WICED_802_11_BAND_2_4GHZ
 
 /* This is the network interface the device will work with */
 #define WICED_NETWORK_INTERFACE   WICED_STA_INTERFACE
