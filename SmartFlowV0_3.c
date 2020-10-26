@@ -34,7 +34,8 @@
 #define BUFFER_RX_WIDTH     120
 
 #define BUFFER_SIZE    120
-#define TEST_STR          "\r\nType something! Keystrokes are echoed to the terminal ...>\r\n"
+#define TEST_STR          "\r\n<UART WIFI>\r\n"
+#define text_mask          "MASK = OK"
 
 #define        ERROR "No Value\r\n"
 #define        TIMEOUT "TIMEOUT\r\n"
@@ -93,9 +94,18 @@ uint32_t    expected_data_size = 1;
     int con=0;
     unsigned char cadena[BUFFER_SIZE];
     char buffer_t[40];
-    char    mcu[4];
+    unsigned char    mcu_adc[5];
+    unsigned char    mcu_gpio[17];
+    unsigned char    mcu[23];
 
 
+
+
+
+    static wiced_tcp_socket_t  socket;
+    uint32_t        start_time, end_time;
+    static wiced_bool_t button1_pressed = WICED_TRUE;
+    static wiced_bool_t EnableA1 = WICED_FALSE;
 
 /****************************************************
 *              Uart definitions
@@ -121,6 +131,9 @@ static wiced_result_t start_tcp();
 static wiced_tcp_socket_t  tcp_client_socket;
 static wiced_timed_event_t tcp_client_event;
 static wiced_tcp_socket_t  socket;
+
+void button_B(void* arg);
+void button_h(void* arg);
 
 /****************************************************
  *         Static Function Declarations
@@ -155,52 +168,66 @@ void application_start( )
 {
         wiced_interface_t interface;
         wiced_result_t result;
-        /* Initialize the device */
+        wiced_result_t resu;
+
+        memset(mcu_adc,'0',5);
+        memset(mcu_gpio,'0',17);
+        sprintf(mcu,"%c%c%c%c%c,%s",mcu_adc[0],mcu_adc[1],mcu_adc[2],mcu_adc[3],mcu_adc[4],mcu_gpio);
+
+
+        /* Inicializar salida de leds */
+        wiced_gpio_init( WICED_BUTTON1, INPUT_PULL_UP );
+        wiced_gpio_init(WICED_LED1, OUTPUT_PUSH_PULL);
+        wiced_gpio_output_high( WICED_LED1 );
+        wiced_gpio_init(WICED_LED2, OUTPUT_PUSH_PULL);
+        wiced_gpio_output_high( WICED_LED2 );
+        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL); /* Setup interrupt */
+        /* Initialize the device and WICED framework */
         wiced_init();
         uart_init();
-
         init_tcp_w();
         is_config();
 
+
+
+
         if(flag_tcp==1){
+            wiced_interface_t interface;
+            wiced_result_t result;
 
+            d1= ((rg[0]<< 24) | (rg[1] << 16) | ( rg[2] << 8) | (rg[3]));
+            d2= ((rn[0]<< 24) | (rn[1] << 16) | ( rn[2] << 8) | (rn[3]));
+            d3= ((ri[0]<< 24) | (ri[1] << 16) | ( ri[2] << 8) | (ri[3]));
 
-        wiced_interface_t interface;
-        wiced_result_t result;
+            s1 = MAKE_IPV4_ADDRESS(rs[0],rs[1],rs[2],rs[3]);
 
-        d1= ((rg[0]<< 24) | (rg[1] << 16) | ( rg[2] << 8) | (rg[3]));
-        d2= ((rn[0]<< 24) | (rn[1] << 16) | ( rn[2] << 8) | (rn[3]));
-        d3= ((ri[0]<< 24) | (ri[1] << 16) | ( ri[2] << 8) | (ri[3]));
+            wiced_ip_setting_t device_init_ip_settings2 ={
+            .gateway={WICED_IPV4,{.v4=(uint32_t)d1}},
+            .netmask={WICED_IPV4,{.v4=(uint32_t)d2}},
+            .ip_address={WICED_IPV4,{.v4=(uint32_t)d3}},
 
-        s1 = MAKE_IPV4_ADDRESS(rs[0],rs[1],rs[2],rs[3]);
+            };
 
-        wiced_ip_setting_t device_init_ip_settings2 ={
-        .gateway={WICED_IPV4,{.v4=(uint32_t)d1}},
-        .netmask={WICED_IPV4,{.v4=(uint32_t)d2}},
-        .ip_address={WICED_IPV4,{.v4=(uint32_t)d3}},
+            result = wiced_network_up(WICED_STA_INTERFACE, WICED_USE_STATIC_IP, &device_init_ip_settings2);
 
-        };
+            if ( result != WICED_SUCCESS )
+            {
 
-        result = wiced_network_up(WICED_STA_INTERFACE, WICED_USE_STATIC_IP, &device_init_ip_settings2);
-
-        if ( result != WICED_SUCCESS )
-        {
-
-        wiced_uart_transmit_bytes(WICED_UART_3,("Bringing up network interface failed !\n"),40);
-        }
-
-        /* Create a TCP socket */
-        if ( wiced_tcp_create_socket( &tcp_client_socket, interface ) != WICED_SUCCESS )
-        {
-        wiced_uart_transmit_bytes(WICED_UART_3,("TCP socket creation failed\n"),20);
-
-        }
-        /* Bind to the socket */
-        wiced_tcp_bind( &tcp_client_socket, TCP_SERVER_PORT );
-
-        /* Register a function to send TCP packets */
-        wiced_rtos_register_timed_event( &tcp_client_event, WICED_NETWORKING_WORKER_THREAD, &tcp_client, TCP_CLIENT_INTERVAL * SECONDS, 0 );
+            wiced_uart_transmit_bytes(WICED_UART_3,("Bringing up network interface failed !\n"),40);
             }
+
+            /* Create a TCP socket */
+            if ( wiced_tcp_create_socket( &tcp_client_socket, interface ) != WICED_SUCCESS )
+            {
+            wiced_uart_transmit_bytes(WICED_UART_3,("TCP socket creation failed\n"),20);
+
+            }
+            /* Bind to the socket */
+            wiced_tcp_bind( &tcp_client_socket, TCP_SERVER_PORT );
+
+            /* Register a function to send TCP packets */
+            wiced_rtos_register_timed_event( &tcp_client_event, WICED_NETWORKING_WORKER_THREAD, &tcp_client, TCP_CLIENT_INTERVAL * SECONDS, 0 );
+         }
     while ( 1 )
     {
         //levantar el servicio tcp
@@ -224,7 +251,6 @@ void application_start( )
                     Set_SERVER(cadena,con);
                 }
                 else if(strcmp(com,"-G") == 0){
-
                     Set_GATEWAY(cadena,con);
                 }
                 else if(strcmp(com,"-M") == 0){
@@ -233,14 +259,15 @@ void application_start( )
                 else if(strcmp(com,"-C") == 0){
                     Set_IP(cadena,con);
                 }
-                else if(strcmp(com,"-U") == 0){
-                    start_tcp();
+                else if(strcmp(com,"-E") == 0){
                     Set_config();
+                    wiced_framework_reboot();
                 }
-                else if(strcmp(com,"-Y") == 0){
+                else if(strcmp(com,"-B") == 0){
                     Un_Set_config();
+                    wiced_framework_reboot();
                 }
-                else if(strcmp(com,"-X") == 0){
+                else if(strcmp(com,"MC") == 0){
                     mcu_config(cadena,con);
                 }
                 else{
@@ -252,7 +279,11 @@ void application_start( )
             memset(com,'\0',BUFFER_SIZE-1);
             memset(&RX,'\0',BUFFER_SIZE);
             }
+            else if(RX==13){
+
+            }
             else{
+
                 cadena[con++]=RX;
             }
 
@@ -267,18 +298,18 @@ static wiced_result_t uart_init(void)
         /* Initialise ring buffer */
         //ring_buffer_init(&rx_buffer, rx_data, RX_BUFFER_SIZE );
         ring_buffer_init(&rx_buffer1, rx_data1, BUFFER_SIZE ); /* Initialize ring buffer to hold receive data */
-        ring_buffer_init(&rx_buffer2, rx_data2, BUFFER_SIZE); /* Initialize ring buffer to hold receive data */
+       // ring_buffer_init(&rx_buffer2, rx_data2, BUFFER_SIZE); /* Initialize ring buffer to hold receive data */
 
         /* Initialise UART. A ring buffer is used to hold received characters */
        // wiced_uart_init( STDIO_UART, &uart_config, &rx_buffer );
 
         wiced_uart_init( WICED_UART_3, &uart_config, &rx_buffer1); /* Setup UART */
-        wiced_uart_init( WICED_UART_1, &uart_config, &rx_buffer2); /* Setup UART */
+        //wiced_uart_init( WICED_UART_1, &uart_config, &rx_buffer2); /* Setup UART */
 
         /* Send a test string to the terminal */
         //wiced_uart_transmit_bytes( STDIO_UART, TEST_STR, sizeof( TEST_STR ) - 1 );
        wiced_uart_transmit_bytes( WICED_UART_3, TEST_STR, sizeof( TEST_STR ) - 1 );
-       wiced_uart_transmit_bytes( WICED_UART_1, TEST_STR, sizeof( TEST_STR ) - 1 );
+       //wiced_uart_transmit_bytes( WICED_UART_1, TEST_STR, sizeof( TEST_STR ) - 1 );
         return WICED_SUCCESS;
 }
 static wiced_result_t print_app_dct( void ){
@@ -294,26 +325,26 @@ static wiced_result_t print_app_dct( void ){
         wiced_dct_read_lock((void**) &wifi_config, WICED_FALSE, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
 
 
-        wiced_wifi_get_mac_address(&mac);
+
         /* since we passed ptr_is_writable as WICED_FALSE, we are not allowed to write in to memory pointed by dct_security */
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nGATEWAY:\n" ),10);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nGATEWAY: " ),10);
         wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->GATE ),strlen((((dct_read_write_app_dct_t*)dct_app)->GATE )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nIP:\n" ),5);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nIP: " ),5);
         wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->IP ),strlen((((dct_read_write_app_dct_t*)dct_app)->IP )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSERVER:\n" ),9);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSERVER: " ),9);
         wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->SERVER ),strlen((((dct_read_write_app_dct_t*)dct_app)->SERVER )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nMASK:\n" ),7);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nMASK: " ),7);
         wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->MASK ),strlen((((dct_read_write_app_dct_t*)dct_app)->MASK )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSSID:\n" ),7);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSSID: " ),7);
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].details.SSID.value),wifi_config->stored_ap_list[0].details.SSID.length);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nKEY:\n" ),6);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nKEY: " ),6);
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].security_key),wifi_config->stored_ap_list[0].security_key_length);
-
-        wiced_uart_transmit_bytes(WICED_UART_3,( "MAC:\n" ),5);
-        wiced_uart_transmit_bytes(WICED_UART_1,(("%X:%X:%X:%X:%X:%X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5])),30);
-
+        wiced_uart_transmit_bytes(WICED_UART_3,( "     \n" ),6);
+        /*wiced_wifi_get_mac_address(&mac);
         sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
-       // wiced_uart_transmit_bytes(WICED_UART_1,buffer_t,strlen(buffer_t));
+        wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));*/
+
+
         /* Here ptr_is_writable should be same as what we passed during wiced_dct_read_lock() */
         wiced_dct_read_unlock( dct_app, WICED_FALSE );
         wiced_dct_read_unlock(wifi_config, WICED_FALSE);
@@ -327,8 +358,9 @@ static wiced_result_t Set_SSID(uint8_t *data,uint8_t len){
     platform_dct_wifi_config_t*  wifi_config;
    //Se genera un cadena sin signo para almancenar temporalmente la cadena que llega , quitando los primeros dos datos
 
-    unsigned char str_r[len];
+   unsigned char str_r[len];
    strcpy(str_r,&data[2]);
+   //memcpy(str_r,str_r,strlen(str_r)-2);
 
    /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
  //  wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
@@ -341,7 +373,15 @@ static wiced_result_t Set_SSID(uint8_t *data,uint8_t len){
    strcpy((char *) wifi_config->stored_ap_list[0].details.SSID.value, str_r);
    wifi_config->stored_ap_list[0].details.SSID.length = strlen(str_r);
 
-   wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
+   res=wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
+   char mensage[30];
+   sprintf(mensage,"SSID: %s",str_r);
+   if(res == WICED_SUCCESS){
+       wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+     wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+       return WICED_SUCCESS;
+     }
+
    //wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
    /* release the read lock */
    //wiced_dct_read_unlock( app_dct, WICED_FALSE);
@@ -358,25 +398,22 @@ static wiced_result_t Set_KEY(uint8_t *data,uint8_t len){
         platform_dct_wifi_config_t*  wifi_config;
        //Se genera un cadena sin signo para almancenar temporalmente la cadena que llega , quitando los primeros dos datos
 
-        unsigned char str_r[len];
-       strcpy(str_r,&data[2]);
-
-       /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-     //  wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-
-       /* Modify string_var by writing the whole DCT */
-       //strcpy( app_dct->SSID, str_r );
+       unsigned char str_r[len];
+       strncpy(str_r,&data[2],len);
        // Get a copy of the WIFT config from the DCT into RAM
        wiced_dct_read_lock((void**) &wifi_config, WICED_TRUE, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
 
        strcpy((char *) wifi_config->stored_ap_list[0].security_key, str_r);
        wifi_config->stored_ap_list[0].security_key_length = strlen(str_r);
 
-       wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-       //wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-       /* release the read lock */
-       //wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
+      res= wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
+       char mensage[30];
+       sprintf(mensage,"KEY: %s",str_r);
+       if(res == WICED_SUCCESS){
+           wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+         wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+           return WICED_SUCCESS;
+         }
        wiced_dct_read_unlock(wifi_config, WICED_TRUE);
 
 
@@ -384,37 +421,49 @@ static wiced_result_t Set_KEY(uint8_t *data,uint8_t len){
        return WICED_SUCCESS;
 }
 static wiced_result_t Set_MASK(uint8_t *data,uint8_t len){
-    dct_read_write_app_dct_t*       app_dct                  = NULL;
+        dct_read_write_app_dct_t*       app_dct                  = NULL;
+        wiced_result_t res;
 
-           unsigned char str_r[len];
-           strcpy(str_r,&data[2]);
+        unsigned char str_r[len];
+        strcpy(str_r,&data[2]);
 
-           /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-           wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
+        /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
+        wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
+        /* Modify string_var by writing the whole DCT */
+        strcpy( app_dct->MASK, str_r );
+        res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+        char mensage[30];
+        sprintf(mensage,"MASK: %s",str_r);
+        if(res == WICED_SUCCESS){
+            wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+          wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+            return WICED_SUCCESS;
+          }
+        wiced_dct_read_unlock( app_dct, WICED_FALSE);
 
-           /* Modify string_var by writing the whole DCT */
-           strcpy( app_dct->MASK, str_r );
+        /* Read & print all DCT sections to check that nothing has changed */
 
-           wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-           /* release the read lock */
-           wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-         /* Read & print all DCT sections to check that nothing has changed */
-           return WICED_SUCCESS;
 }
 static wiced_result_t Set_IP(uint8_t *data,uint8_t len){
     dct_read_write_app_dct_t*       app_dct                  = NULL;
-
+    wiced_result_t res;
            unsigned char str_r[len];
            strcpy(str_r,&data[2]);
-
            /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
            wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
 
            /* Modify string_var by writing the whole DCT */
            strcpy( app_dct->IP, str_r );
 
-           wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           char mensage[30];
+           sprintf(mensage,"IP: %s",str_r);
+           if(res == WICED_SUCCESS){
+               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+               wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+               return WICED_SUCCESS;
+             }
+
            /* release the read lock */
            wiced_dct_read_unlock( app_dct, WICED_FALSE);
 
@@ -424,7 +473,7 @@ static wiced_result_t Set_IP(uint8_t *data,uint8_t len){
 static wiced_result_t Set_SERVER(uint8_t *data,uint8_t len){
 
     dct_read_write_app_dct_t*       app_dct                  = NULL;
-
+    wiced_result_t res;
            unsigned char str_r[len];
            strcpy(str_r,&data[2]);
 
@@ -434,7 +483,14 @@ static wiced_result_t Set_SERVER(uint8_t *data,uint8_t len){
            /* Modify string_var by writing the whole DCT */
            strcpy( app_dct->SERVER, str_r );
 
-           wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           char mensage[30];
+           sprintf(mensage,"SERVER: %s",str_r);
+           if(res == WICED_SUCCESS){
+               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+             wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+               return WICED_SUCCESS;
+             }
            /* release the read lock */
            wiced_dct_read_unlock( app_dct, WICED_FALSE);
 
@@ -443,17 +499,23 @@ static wiced_result_t Set_SERVER(uint8_t *data,uint8_t len){
 }
 static wiced_result_t Set_GATEWAY(uint8_t *data,uint8_t len){
     dct_read_write_app_dct_t*       app_dct                  = NULL;
-
+    wiced_result_t res;
            unsigned char str_r[len];
            strcpy(str_r,&data[2]);
-
            /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
            wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
 
            /* Modify string_var by writing the whole DCT */
            strcpy( app_dct->GATE, str_r );
 
-           wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
+           char mensage[30];
+           sprintf(mensage,"GATEWAY: %s",str_r);
+           if(res == WICED_SUCCESS){
+               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
+             wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
+               return WICED_SUCCESS;
+             }
            /* release the read lock */
            wiced_dct_read_unlock( app_dct, WICED_FALSE);
 
@@ -557,15 +619,14 @@ static wiced_result_t tcp_client( void )
     result = wiced_tcp_create_socket(&socket, WICED_STA_INTERFACE); //wiced_tcp_connect( &tcp_client_socket, &server_ip_address, TCP_SERVER_PORT, TCP_CLIENT_CONNECT_TIMEOUT );
     if ( result != WICED_SUCCESS )
     {
-       wiced_uart_transmit_bytes(WICED_UART_3,(( "Failed create socket step 01 = [ %d ]\n",(int) result )),40);
+        //wiced_framework_reboot();
         return WICED_ERROR;
-
     }
 
     result = wiced_tcp_bind( &socket, WICED_ANY_PORT ); /* Poner any port para que actualice el uerto de manera automatica */
     if(result!=WICED_SUCCESS)
     {
-        wiced_uart_transmit_bytes(WICED_UART_3,( "Failed to bind socket step 02 = [%d]\n",(int) result ),40);
+        //wiced_framework_reboot();
         wiced_tcp_delete_socket(&socket); /* Delete socket and return*/
         return WICED_ERROR;
     }
@@ -573,8 +634,7 @@ static wiced_result_t tcp_client( void )
     result = wiced_tcp_connect(&socket,&server_ip_address,TCP_SERVER_PORT,2500); // 2 second timeout
     if ( result != WICED_SUCCESS )
     {
-        wiced_uart_transmit_bytes(WICED_UART_3,( "Failed conect to server socket step 03 = [%d]\n", (int)result ),40);
-
+        //wiced_framework_reboot();
         wiced_tcp_delete_socket(&socket);
         return WICED_ERROR;
 
@@ -590,8 +650,8 @@ static wiced_result_t tcp_client( void )
     //myBssiId = ap_info_buffer.BSSID.octet[0] + ap_info_buffer.BSSID.octet[1] + ap_info_buffer.BSSID.octet[2] + ap_info_buffer.BSSID.octet[3] + ap_info_buffer.BSSID.octet[4] + ap_info_buffer.BSSID.octet[5];
 
     /*Generacion de cadena a enviar*/
-    sprintf(sendMessage,"L;%02X:%02X:%02X:%02X:%02X:%02X,]%s,0000000000000%d%d%d0,%02X:%02X:%02X:%02X:%02X:%02X,%u.%u.%u.%u \r\n",
-            myMac.octet[0],myMac.octet[1],myMac.octet[2],myMac.octet[3],myMac.octet[4],myMac.octet[5],mcu,GPIO_Evac,GPIO_Aux,GPIO_Recib,ap_info_buffer.BSSID.octet[0], ap_info_buffer.BSSID.octet[1],
+    sprintf(sendMessage,"L;%02X:%02X:%02X:%02X:%02X:%02X,%s,%02X:%02X:%02X:%02X:%02X:%02X,%u.%u.%u.%u \r\n",
+            myMac.octet[0],myMac.octet[1],myMac.octet[2],myMac.octet[3],myMac.octet[4],myMac.octet[5],mcu,ap_info_buffer.BSSID.octet[0], ap_info_buffer.BSSID.octet[1],
             ap_info_buffer.BSSID.octet[2],ap_info_buffer.BSSID.octet[3],ap_info_buffer.BSSID.octet[4],ap_info_buffer.BSSID.octet[5],
             (uint8_t)(GET_IPV4_ADDRESS(myIpAddress) >> 24),
             (uint8_t)(GET_IPV4_ADDRESS(myIpAddress) >> 16),
@@ -614,13 +674,18 @@ static wiced_result_t tcp_client( void )
     result = wiced_tcp_stream_read(&stream, rbuffer, 29, TCP_CLIENT_RECEIVE_TIMEOUT); // Read 11 bytes from the buffer - wait up to 500ms for a response
     if(result == WICED_SUCCESS)
     {
-        WPRINT_APP_INFO(("Server Response=%s\n",rbuffer));
+        wiced_uart_transmit_bytes(WICED_UART_3,("%s\n",rbuffer),strlen(rbuffer));
         //rxMessage = rbuffer;
-
+        //rxMessage = rbuffer;
+          wiced_gpio_output_low( WICED_LED1 );
+          wiced_rtos_delay_milliseconds( 250 );
+          /* LED ON for the shield (LED OFF if using the baseboard by itself) */
+          wiced_gpio_output_high( WICED_LED1 );
+          wiced_rtos_delay_milliseconds( 250 );
     }
     else
     {
-        WPRINT_APP_INFO(("Malformed response\n"));
+        //wiced_uart_transmit_bytes(WICED_UART_3,("Malformed response\n"),21);
         //return WICED_ERROR;
     }
     //wwd_wifi_get_ap_info/* Obtener informacion del AP*/
@@ -631,8 +696,42 @@ static wiced_result_t tcp_client( void )
 
     char* resultado;
 
+    if (EnableA1 == WICED_FALSE)
+       {
+           //char* resultado;
+       resultado = strstr(rbuffer,"A1");   // Busca si existe la palabra A1
+           if (resultado)
+               {
+              // wiced_uart_transmit_bytes(WICED_UART_3,("ID A1 \n"),7);
+                   GPIO_Evac = 1;                  // Cambio de estado de GPIO
+                   EnableA1 = WICED_TRUE;
+               }
+       }
 
-    wiced_ip_address_t ipAddress;
+       /* DA proceso */
+       if (EnableA1 == WICED_TRUE)
+       {
+           //char* resultado;
+           resultado = strstr(rbuffer,"DA");   // Busca si existe la palabra DA
+           if (resultado)
+               {
+            //   wiced_uart_transmit_bytes(WICED_UART_3,("ID DA \n"),7);
+                   GPIO_Evac = 0;                  // Cambio de estado de GPIO
+                   GPIO_Recib = 0;
+                   EnableA1 = WICED_FALSE;
+               }
+       }
+       resultado = strstr(rbuffer,"N1");   // Busca si existe la palabra N1
+       if(resultado)
+       {
+           //wiced_uart_transmit_bytes(WICED_UART_3,("ID N1 \n"),7);
+           GPIO_Aux = 0;                  // Cambio de estado de GPIO
+       }
+       /*Otra forma de identificar palabras, es menos eficiente ya que solo identifica la primera*/
+      resultado = strstr(rbuffer,"P1");   // Busca si existe la palabra P1
+       if (resultado){
+         //  wiced_uart_transmit_bytes(WICED_UART_3,("ID P1 \n"),7);
+       }
 
     return WICED_SUCCESS;
 }
@@ -692,9 +791,72 @@ static wiced_result_t Un_Set_config(){
 }
 
 static wiced_result_t mcu_config (uint8_t *data,uint8_t len){
-   unsigned char str_r[len];
-   strcpy(str_r,&data[2]);
-   sprintf(mcu,"%s",str_r);
+
+   unsigned char str_y[5];
+   unsigned char str_a[17];
+
+   strncpy(str_y,&data[4],5);
+   strncpy(str_a,&data[10],17);
+
+   for(int x=0 ; x<=4 ;x++){
+       mcu_adc[x]=str_y[x];
+   }
+   for(int x=0 ; x<=17 ;x++){
+       mcu_gpio[x]=str_a[x];
+   }
+
+   sprintf(mcu,"%c%c%c%c%c,%s",mcu_adc[0],mcu_adc[1],mcu_adc[2],mcu_adc[3],mcu_adc[4],mcu_gpio);
+
+
+}
+
+void button_h(void* arg)
+{
+    wiced_gpio_input_irq_disable (WICED_BUTTON1);
+    //wiced_rtos_delay_milliseconds(20);    /* Revisar si es necesaria esta parte en la practipa para evitar problemas con el boton */
+    button1_pressed = wiced_gpio_input_get( WICED_BUTTON1 ) ? WICED_FALSE : WICED_TRUE;
+    /* Toggle LED1 */
+    if ( button1_pressed == WICED_FALSE )
+    {
+        wiced_time_get_time( & end_time);
+        WPRINT_APP_INFO( ("Boton presionado por: %d ms\r\n", (int)( end_time - start_time ) ) );
+        wiced_gpio_output_high( WICED_LED2 );
+        if ((end_time-start_time) >= 5000)
+        {
+            WPRINT_APP_INFO( ("Ayuda \r\n" ));
+            GPIO_Aux = 1;
+        }
+        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL);
+    }
+    else
+    {
+        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_RISING_EDGE, button_h, NULL);
+        WPRINT_APP_INFO( ("Falsa Alarma, interrupcion habilitada \r\n"));
+    }
+    return;
+}
+void button_B(void* arg)
+{
+    wiced_gpio_input_irq_disable (WICED_BUTTON1);
+    //wiced_rtos_delay_milliseconds(20); /* Revisar si es necesaria esta parte en la practipa para evitar problemas con el boton */
+    button1_pressed = wiced_gpio_input_get( WICED_BUTTON1 ) ? WICED_FALSE : WICED_TRUE;
+    /* Toggle LED1 */
+    if ( button1_pressed == WICED_TRUE )
+    {
+        if (EnableA1 == WICED_TRUE)
+        {
+            GPIO_Recib = 1;
+        }
+        wiced_time_get_time( &start_time );
+        wiced_gpio_output_low( WICED_LED2 );
+        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_RISING_EDGE, button_h, NULL);
+    }
+    else
+    {
+        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL); /* Setup interrupt */
+        WPRINT_APP_INFO( ("Falsa Alarma, interrupcion habilitada \r\n"));
+    }
+    return;
 }
 
 
