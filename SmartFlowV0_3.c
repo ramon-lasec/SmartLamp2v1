@@ -15,7 +15,7 @@
  *                    Constants
  ******************************************************/
 
-#define TCP_PACKET_MAX_DATA_LENGTH        64
+#define TCP_PACKET_MAX_DATA_LENGTH        80
 #define TCP_CLIENT_INTERVAL               2
 #define TCP_SERVER_PORT                   8010
 #define TCP_CLIENT_CONNECT_TIMEOUT        5000
@@ -154,6 +154,8 @@ uint32_t d1;
 uint32_t d2;
 uint32_t d3;
 uint32_t d4;
+wiced_bool_t Ctr_Connection;
+
 
 int flag_tcp = 0;
 
@@ -172,6 +174,8 @@ void application_start( )
 
         memset(mcu_adc,'0',5);
         memset(mcu_gpio,'0',17);
+        mcu_adc[0]='1';
+        mcu_adc[1]='6';
         sprintf(mcu,"%c%c%c%c%c,%s",mcu_adc[0],mcu_adc[1],mcu_adc[2],mcu_adc[3],mcu_adc[4],mcu_gpio);
 
 
@@ -273,21 +277,39 @@ void application_start( )
                 else{
 
                 }
-            expected_data_size=1;
-            con=0;
-            memset(cadena,'\0',BUFFER_SIZE-1);
-            memset(com,'\0',BUFFER_SIZE-1);
-            memset(&RX,'\0',BUFFER_SIZE);
-            }
-            else if(RX==13){
+                expected_data_size=1;
+                con=0;
+                memset(cadena,'\0',BUFFER_SIZE-1);
+                memset(com,'\0',BUFFER_SIZE-1);
+                memset(&RX,'\0',BUFFER_SIZE);
+                }
+                else if(RX==13){
 
-            }
-            else{
+                }
+                else{
 
-                cadena[con++]=RX;
-            }
+                    cadena[con++]=RX;
+                }
 
-        }
+             }
+         if(Ctr_Connection == WICED_TRUE)
+         {
+             wiced_platform_mcu_enable_powersave();
+         }
+
+         while(Ctr_Connection == WICED_TRUE)
+         {
+             result = tcp_client();
+             if (result != WICED_SUCCESS)
+             {
+                 Ctr_Connection = WICED_FALSE;
+             }
+                 wiced_wifi_enable_powersave_with_throughput(40);
+                 /* Suspend networking activity while sleeping */
+                 wiced_network_suspend();
+                 wiced_rtos_delay_milliseconds( TCP_CLIENT_INTERVAL * SECONDS );
+                 wiced_network_resume();
+         }
 
 
     }
@@ -314,7 +336,7 @@ static wiced_result_t uart_init(void)
 }
 static wiced_result_t print_app_dct( void ){
         dct_read_write_app_dct_t* dct_app = NULL;
-        wiced_mac_t mac;
+        wiced_mac_t  mac;
         platform_dct_wifi_config_t*  wifi_config;
 
         if ( wiced_dct_read_lock( (void**) &dct_app, WICED_FALSE, DCT_APP_SECTION, 0, sizeof( *dct_app ) ) != WICED_SUCCESS )
@@ -339,10 +361,16 @@ static wiced_result_t print_app_dct( void ){
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].details.SSID.value),wifi_config->stored_ap_list[0].details.SSID.length);
         wiced_uart_transmit_bytes(WICED_UART_3,( "\nKEY: " ),6);
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].security_key),wifi_config->stored_ap_list[0].security_key_length);
+        wiced_uart_transmit_bytes(WICED_UART_3,( "\nMAC: " ),6);
+
+        if ( wwd_wifi_get_mac_address( &mac, WWD_STA_INTERFACE ) == WWD_SUCCESS )
+        {
+            sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
+                   wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));
+        }
+
         wiced_uart_transmit_bytes(WICED_UART_3,( "     \n" ),6);
-        /*wiced_wifi_get_mac_address(&mac);
-        sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
-        wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));*/
+
 
 
         /* Here ptr_is_writable should be same as what we passed during wiced_dct_read_lock() */
@@ -756,6 +784,7 @@ return WICED_SUCCESS;
 
 static wiced_result_t Set_config(){
     dct_read_write_app_dct_t*       app_dct                  = NULL;
+    Ctr_Connection = WICED_TRUE;
 
     /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
     wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
