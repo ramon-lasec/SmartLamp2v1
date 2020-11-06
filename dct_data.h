@@ -39,6 +39,7 @@ typedef struct
     const       ip_1;
     unsigned long IPSETING;
     int        F_config;
+    int         F_save;
 
 } dct_read_write_app_dct_t;
 #pragma pack ()

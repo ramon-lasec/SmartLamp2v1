@@ -361,12 +361,12 @@ static wiced_result_t print_app_dct( void ){
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].details.SSID.value),wifi_config->stored_ap_list[0].details.SSID.length);
         wiced_uart_transmit_bytes(WICED_UART_3,( "\nKEY: " ),6);
         wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].security_key),wifi_config->stored_ap_list[0].security_key_length);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nMAC: " ),6);
+        //wiced_uart_transmit_bytes(WICED_UART_3,( "\nMAC: " ),6);
 
         if ( wwd_wifi_get_mac_address( &mac, WWD_STA_INTERFACE ) == WWD_SUCCESS )
         {
-            sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
-                   wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));
+           // sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
+              //     wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));
         }
 
         wiced_uart_transmit_bytes(WICED_UART_3,( "     \n" ),6);
@@ -791,6 +791,7 @@ static wiced_result_t Set_config(){
 
     /* Modify string_var by writing the whole DCT */
         app_dct->F_config=1;
+        app_dct->F_save=1;
     wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
     /* release the read lock */
     wiced_dct_read_unlock( app_dct, WICED_FALSE);
@@ -808,7 +809,13 @@ static wiced_result_t Un_Set_config(){
     wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
 
     /* Modify string_var by writing the whole DCT */
+    if(app_dct->F_config==1){
         app_dct->F_config=0;
+    }
+    else if((app_dct->F_config==0)&&(app_dct->F_save==1)){
+          app_dct->F_config=1;
+      }
+
     wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
     /* release the read lock */
     wiced_dct_read_unlock( app_dct, WICED_FALSE);

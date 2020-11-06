@@ -40,6 +40,7 @@ DEFINE_APP_DCT(dct_read_write_app_dct_t)
     .ip_1               =12,
     .IPSETING           =784,
     .F_config           =0,
+    .F_save             =0,
 
 };
 
