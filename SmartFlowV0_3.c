@@ -6,11 +6,12 @@
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include "manager_net.h"
 
 /******************************************************
  *                      Macros
  ******************************************************/
-#define VERSION "Version 1.0.0\r\n"
+#define VERSION "Version 2.1.1\r\n"
 /******************************************************
  *                    Constants
  ******************************************************/
@@ -23,19 +24,12 @@
 #define TCP_CONNECTION_NUMBER_OF_RETRIES  3
 #define TIMER_TIME (8000)
 
-/* Change the server IP address to match the TCP echo server address */
-#define TCP_SERVER_IP_ADDRESS MAKE_IPV4_ADDRESS(172,168,100,49)
-
-#define CHANGE_SSID                      0
-#define CHANGE_KEY                       1
-#define CHANGE_SERVER                    2
 
 #define BUFFER_RX_LEN       120
 #define BUFFER_RX_WIDTH     120
 
 #define BUFFER_SIZE    120
 #define TEST_STR          "\r\n<UART WIFI>\r\n"
-#define text_mask          "MASK = OK"
 
 #define        ERROR "No Value\r\n"
 #define        TIMEOUT "TIMEOUT\r\n"
@@ -43,9 +37,6 @@
 /******************************************************
  *                    Constants
  ******************************************************/
-static int GPIO_Evac = 0;
-static int GPIO_Aux  = 0;
-static int GPIO_Recib = 0;
 
 /****************************************************
  *              Uart definitions
@@ -101,11 +92,7 @@ uint32_t    expected_data_size = 1;
 
 
 
-
-    static wiced_tcp_socket_t  socket;
     uint32_t        start_time, end_time;
-    static wiced_bool_t button1_pressed = WICED_TRUE;
-    static wiced_bool_t EnableA1 = WICED_FALSE;
 
 /****************************************************
 *              Uart definitions
@@ -117,23 +104,12 @@ static wiced_result_t mcu_config(uint8_t *data,uint8_t len);
 static wiced_result_t Un_Set_config();
 static wiced_result_t Set_config();
 static wiced_result_t  is_config();
-static wiced_result_t print_app_dct( void );
 static wiced_result_t init_tcp_w();
-static wiced_result_t Set_SSID(uint8_t *data,uint8_t len);
-static wiced_result_t Set_KEY(uint8_t *data,uint8_t len);
-static wiced_result_t Set_MASK(uint8_t *data,uint8_t len);
-static wiced_result_t Set_SERVER(uint8_t *data,uint8_t len);
-static wiced_result_t Set_IP(uint8_t *data,uint8_t len);
-static wiced_result_t Set_GATEWAY(uint8_t *data,uint8_t len);
 static wiced_result_t uart_init(void);
 static wiced_result_t tcp_client();
-static wiced_result_t start_tcp();
 static wiced_tcp_socket_t  tcp_client_socket;
 static wiced_timed_event_t tcp_client_event;
-static wiced_tcp_socket_t  socket;
 
-void button_B(void* arg);
-void button_h(void* arg);
 
 /****************************************************
  *         Static Function Declarations
@@ -170,7 +146,6 @@ void application_start( )
 {
         wiced_interface_t interface;
         wiced_result_t result;
-        wiced_result_t resu;
 
         memset(mcu_adc,'0',5);
         memset(mcu_gpio,'0',17);
@@ -180,12 +155,10 @@ void application_start( )
 
 
         /* Inicializar salida de leds */
-        wiced_gpio_init( WICED_BUTTON1, INPUT_PULL_UP );
         wiced_gpio_init(WICED_LED1, OUTPUT_PUSH_PULL);
         wiced_gpio_output_high( WICED_LED1 );
         wiced_gpio_init(WICED_LED2, OUTPUT_PUSH_PULL);
         wiced_gpio_output_high( WICED_LED2 );
-        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL); /* Setup interrupt */
         /* Initialize the device and WICED framework */
         wiced_init();
         uart_init();
@@ -330,226 +303,12 @@ static wiced_result_t uart_init(void)
 
         /* Send a test string to the terminal */
         //wiced_uart_transmit_bytes( STDIO_UART, TEST_STR, sizeof( TEST_STR ) - 1 );
+        wiced_uart_transmit_bytes( WICED_UART_3, VERSION, sizeof( VERSION ) - 1 );
        wiced_uart_transmit_bytes( WICED_UART_3, TEST_STR, sizeof( TEST_STR ) - 1 );
        //wiced_uart_transmit_bytes( WICED_UART_1, TEST_STR, sizeof( TEST_STR ) - 1 );
         return WICED_SUCCESS;
 }
-static wiced_result_t print_app_dct( void ){
-        dct_read_write_app_dct_t* dct_app = NULL;
-        wiced_mac_t  mac;
-        platform_dct_wifi_config_t*  wifi_config;
 
-        if ( wiced_dct_read_lock( (void**) &dct_app, WICED_FALSE, DCT_APP_SECTION, 0, sizeof( *dct_app ) ) != WICED_SUCCESS )
-        {
-            return WICED_ERROR;
-        }
-        // Get a copy of the WIFT config from the DCT into RAM
-        wiced_dct_read_lock((void**) &wifi_config, WICED_FALSE, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-
-
-
-        /* since we passed ptr_is_writable as WICED_FALSE, we are not allowed to write in to memory pointed by dct_security */
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nGATEWAY: " ),10);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->GATE ),strlen((((dct_read_write_app_dct_t*)dct_app)->GATE )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nIP: " ),5);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->IP ),strlen((((dct_read_write_app_dct_t*)dct_app)->IP )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSERVER: " ),9);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->SERVER ),strlen((((dct_read_write_app_dct_t*)dct_app)->SERVER )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nMASK: " ),7);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "%s\n",(char*) ((dct_read_write_app_dct_t*)dct_app)->MASK ),strlen((((dct_read_write_app_dct_t*)dct_app)->MASK )));
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nSSID: " ),7);
-        wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].details.SSID.value),wifi_config->stored_ap_list[0].details.SSID.length);
-        wiced_uart_transmit_bytes(WICED_UART_3,( "\nKEY: " ),6);
-        wiced_uart_transmit_bytes(WICED_UART_3,("%s\n\r",wifi_config->stored_ap_list[0].security_key),wifi_config->stored_ap_list[0].security_key_length);
-        //wiced_uart_transmit_bytes(WICED_UART_3,( "\nMAC: " ),6);
-
-        if ( wwd_wifi_get_mac_address( &mac, WWD_STA_INTERFACE ) == WWD_SUCCESS )
-        {
-           // sprintf(buffer_t,("%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac.octet[0], mac.octet[1], mac.octet[2],mac.octet[3], mac.octet[4], mac.octet[5]));
-              //     wiced_uart_transmit_bytes(WICED_UART_3,("%s \n\r",buffer_t),strlen(buffer_t));
-        }
-
-        wiced_uart_transmit_bytes(WICED_UART_3,( "     \n" ),6);
-
-
-
-        /* Here ptr_is_writable should be same as what we passed during wiced_dct_read_lock() */
-        wiced_dct_read_unlock( dct_app, WICED_FALSE );
-        wiced_dct_read_unlock(wifi_config, WICED_FALSE);
-
-        return WICED_SUCCESS;
-}
-
-static wiced_result_t Set_SSID(uint8_t *data,uint8_t len){
-    //dct_read_write_app_dct_t*       app_dct                  = NULL;
-    wiced_result_t res;
-    platform_dct_wifi_config_t*  wifi_config;
-   //Se genera un cadena sin signo para almancenar temporalmente la cadena que llega , quitando los primeros dos datos
-
-   unsigned char str_r[len];
-   strcpy(str_r,&data[2]);
-   //memcpy(str_r,str_r,strlen(str_r)-2);
-
-   /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
- //  wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-
-   /* Modify string_var by writing the whole DCT */
-   //strcpy( app_dct->SSID, str_r );
-   // Get a copy of the WIFT config from the DCT into RAM
-   wiced_dct_read_lock((void**) &wifi_config, WICED_TRUE, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-
-   strcpy((char *) wifi_config->stored_ap_list[0].details.SSID.value, str_r);
-   wifi_config->stored_ap_list[0].details.SSID.length = strlen(str_r);
-
-   res=wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-   char mensage[30];
-   sprintf(mensage,"SSID: %s",str_r);
-   if(res == WICED_SUCCESS){
-       wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-     wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-       return WICED_SUCCESS;
-     }
-
-   //wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-   /* release the read lock */
-   //wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-   wiced_dct_read_unlock(wifi_config, WICED_TRUE);
-
-
- /* Read & print all DCT sections to check that nothing has changed */
-   return WICED_SUCCESS;
-}
-static wiced_result_t Set_KEY(uint8_t *data,uint8_t len){
-    //dct_read_write_app_dct_t*       app_dct                  = NULL;
-        wiced_result_t res;
-        platform_dct_wifi_config_t*  wifi_config;
-       //Se genera un cadena sin signo para almancenar temporalmente la cadena que llega , quitando los primeros dos datos
-
-       unsigned char str_r[len];
-       strncpy(str_r,&data[2],len);
-       // Get a copy of the WIFT config from the DCT into RAM
-       wiced_dct_read_lock((void**) &wifi_config, WICED_TRUE, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-
-       strcpy((char *) wifi_config->stored_ap_list[0].security_key, str_r);
-       wifi_config->stored_ap_list[0].security_key_length = strlen(str_r);
-
-      res= wiced_dct_write((const void *) wifi_config, DCT_WIFI_CONFIG_SECTION, 0, sizeof(platform_dct_wifi_config_t));
-       char mensage[30];
-       sprintf(mensage,"KEY: %s",str_r);
-       if(res == WICED_SUCCESS){
-           wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-         wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-           return WICED_SUCCESS;
-         }
-       wiced_dct_read_unlock(wifi_config, WICED_TRUE);
-
-
-     /* Read & print all DCT sections to check that nothing has changed */
-       return WICED_SUCCESS;
-}
-static wiced_result_t Set_MASK(uint8_t *data,uint8_t len){
-        dct_read_write_app_dct_t*       app_dct                  = NULL;
-        wiced_result_t res;
-
-        unsigned char str_r[len];
-        strcpy(str_r,&data[2]);
-
-        /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-        wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-        /* Modify string_var by writing the whole DCT */
-        strcpy( app_dct->MASK, str_r );
-        res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-        char mensage[30];
-        sprintf(mensage,"MASK: %s",str_r);
-        if(res == WICED_SUCCESS){
-            wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-          wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-            return WICED_SUCCESS;
-          }
-        wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-        /* Read & print all DCT sections to check that nothing has changed */
-
-}
-static wiced_result_t Set_IP(uint8_t *data,uint8_t len){
-    dct_read_write_app_dct_t*       app_dct                  = NULL;
-    wiced_result_t res;
-           unsigned char str_r[len];
-           strcpy(str_r,&data[2]);
-           /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-           wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-
-           /* Modify string_var by writing the whole DCT */
-           strcpy( app_dct->IP, str_r );
-
-           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-           char mensage[30];
-           sprintf(mensage,"IP: %s",str_r);
-           if(res == WICED_SUCCESS){
-               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-               wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-               return WICED_SUCCESS;
-             }
-
-           /* release the read lock */
-           wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-         /* Read & print all DCT sections to check that nothing has changed */
-           return WICED_SUCCESS;
-}
-static wiced_result_t Set_SERVER(uint8_t *data,uint8_t len){
-
-    dct_read_write_app_dct_t*       app_dct                  = NULL;
-    wiced_result_t res;
-           unsigned char str_r[len];
-           strcpy(str_r,&data[2]);
-
-           /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-           wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-
-           /* Modify string_var by writing the whole DCT */
-           strcpy( app_dct->SERVER, str_r );
-
-           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-           char mensage[30];
-           sprintf(mensage,"SERVER: %s",str_r);
-           if(res == WICED_SUCCESS){
-               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-             wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-               return WICED_SUCCESS;
-             }
-           /* release the read lock */
-           wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-         /* Read & print all DCT sections to check that nothing has changed */
-           return WICED_SUCCESS;
-}
-static wiced_result_t Set_GATEWAY(uint8_t *data,uint8_t len){
-    dct_read_write_app_dct_t*       app_dct                  = NULL;
-    wiced_result_t res;
-           unsigned char str_r[len];
-           strcpy(str_r,&data[2]);
-           /* get the App config section for modifying, any memory allocation required would be done inside wiced_dct_read_lock() */
-           wiced_dct_read_lock( (void**) &app_dct, WICED_TRUE, DCT_APP_SECTION, 0, sizeof( *app_dct ) );
-
-           /* Modify string_var by writing the whole DCT */
-           strcpy( app_dct->GATE, str_r );
-
-           res=wiced_dct_write( (const void*) app_dct, DCT_APP_SECTION, 0, sizeof(dct_read_write_app_dct_t) );
-           char mensage[30];
-           sprintf(mensage,"GATEWAY: %s",str_r);
-           if(res == WICED_SUCCESS){
-               wiced_uart_transmit_bytes( WICED_UART_3,mensage, strlen(mensage));
-             wiced_uart_transmit_bytes( WICED_UART_3, ("\r"),1);
-               return WICED_SUCCESS;
-             }
-           /* release the read lock */
-           wiced_dct_read_unlock( app_dct, WICED_FALSE);
-
-         /* Read & print all DCT sections to check that nothing has changed */
-           return WICED_SUCCESS;
-}
 static wiced_result_t init_tcp_w(){
     dct_read_write_app_dct_t* dct_app = NULL;
     wiced_result_t result;
@@ -626,9 +385,7 @@ static wiced_result_t init_tcp_w(){
     return WICED_SUCCESS;
 
 }
-static wiced_result_t start_tcp(){
 
-}
 static wiced_result_t tcp_client( void )
 {
     wiced_tcp_socket_t socket;                      // The TCP socket
@@ -722,44 +479,6 @@ static wiced_result_t tcp_client( void )
     wiced_tcp_stream_deinit(&stream);
     wiced_tcp_delete_socket(&socket);
 
-    char* resultado;
-
-    if (EnableA1 == WICED_FALSE)
-       {
-           //char* resultado;
-       resultado = strstr(rbuffer,"A1");   // Busca si existe la palabra A1
-           if (resultado)
-               {
-              // wiced_uart_transmit_bytes(WICED_UART_3,("ID A1 \n"),7);
-                   GPIO_Evac = 1;                  // Cambio de estado de GPIO
-                   EnableA1 = WICED_TRUE;
-               }
-       }
-
-       /* DA proceso */
-       if (EnableA1 == WICED_TRUE)
-       {
-           //char* resultado;
-           resultado = strstr(rbuffer,"DA");   // Busca si existe la palabra DA
-           if (resultado)
-               {
-            //   wiced_uart_transmit_bytes(WICED_UART_3,("ID DA \n"),7);
-                   GPIO_Evac = 0;                  // Cambio de estado de GPIO
-                   GPIO_Recib = 0;
-                   EnableA1 = WICED_FALSE;
-               }
-       }
-       resultado = strstr(rbuffer,"N1");   // Busca si existe la palabra N1
-       if(resultado)
-       {
-           //wiced_uart_transmit_bytes(WICED_UART_3,("ID N1 \n"),7);
-           GPIO_Aux = 0;                  // Cambio de estado de GPIO
-       }
-       /*Otra forma de identificar palabras, es menos eficiente ya que solo identifica la primera*/
-      resultado = strstr(rbuffer,"P1");   // Busca si existe la palabra P1
-       if (resultado){
-         //  wiced_uart_transmit_bytes(WICED_UART_3,("ID P1 \n"),7);
-       }
 
     return WICED_SUCCESS;
 }
@@ -844,55 +563,6 @@ static wiced_result_t mcu_config (uint8_t *data,uint8_t len){
    sprintf(mcu,"%c%c%c%c%c,%s",mcu_adc[0],mcu_adc[1],mcu_adc[2],mcu_adc[3],mcu_adc[4],mcu_gpio);
 
 
-}
-
-void button_h(void* arg)
-{
-    wiced_gpio_input_irq_disable (WICED_BUTTON1);
-    //wiced_rtos_delay_milliseconds(20);    /* Revisar si es necesaria esta parte en la practipa para evitar problemas con el boton */
-    button1_pressed = wiced_gpio_input_get( WICED_BUTTON1 ) ? WICED_FALSE : WICED_TRUE;
-    /* Toggle LED1 */
-    if ( button1_pressed == WICED_FALSE )
-    {
-        wiced_time_get_time( & end_time);
-        WPRINT_APP_INFO( ("Boton presionado por: %d ms\r\n", (int)( end_time - start_time ) ) );
-        wiced_gpio_output_high( WICED_LED2 );
-        if ((end_time-start_time) >= 5000)
-        {
-            WPRINT_APP_INFO( ("Ayuda \r\n" ));
-            GPIO_Aux = 1;
-        }
-        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL);
-    }
-    else
-    {
-        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_RISING_EDGE, button_h, NULL);
-        WPRINT_APP_INFO( ("Falsa Alarma, interrupcion habilitada \r\n"));
-    }
-    return;
-}
-void button_B(void* arg)
-{
-    wiced_gpio_input_irq_disable (WICED_BUTTON1);
-    //wiced_rtos_delay_milliseconds(20); /* Revisar si es necesaria esta parte en la practipa para evitar problemas con el boton */
-    button1_pressed = wiced_gpio_input_get( WICED_BUTTON1 ) ? WICED_FALSE : WICED_TRUE;
-    /* Toggle LED1 */
-    if ( button1_pressed == WICED_TRUE )
-    {
-        if (EnableA1 == WICED_TRUE)
-        {
-            GPIO_Recib = 1;
-        }
-        wiced_time_get_time( &start_time );
-        wiced_gpio_output_low( WICED_LED2 );
-        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_RISING_EDGE, button_h, NULL);
-    }
-    else
-    {
-        wiced_gpio_input_irq_enable(WICED_BUTTON1, IRQ_TRIGGER_FALLING_EDGE, button_B, NULL); /* Setup interrupt */
-        WPRINT_APP_INFO( ("Falsa Alarma, interrupcion habilitada \r\n"));
-    }
-    return;
 }
 
 
