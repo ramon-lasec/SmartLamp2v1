@@ -11,7 +11,7 @@
 /******************************************************
  *                      Macros
  ******************************************************/
-#define VERSION "Version 2.1.1\r\n"
+#define VERSION "Version 2.1.3\r\n"
 /******************************************************
  *                    Constants
  ******************************************************/
@@ -89,7 +89,7 @@ uint32_t    expected_data_size = 1;
     unsigned char    mcu_gpio[17];
     unsigned char    mcu[23];
 
-
+    uint8_t try_n=0;
 
 
     uint32_t        start_time, end_time;
@@ -165,50 +165,48 @@ void application_start( )
         init_tcp_w();
         is_config();
 
-
-
-
         if(flag_tcp==1){
-            wiced_interface_t interface;
-            wiced_result_t result;
+                    wiced_interface_t interface;
+                    wiced_result_t result;
 
-            d1= ((rg[0]<< 24) | (rg[1] << 16) | ( rg[2] << 8) | (rg[3]));
-            d2= ((rn[0]<< 24) | (rn[1] << 16) | ( rn[2] << 8) | (rn[3]));
-            d3= ((ri[0]<< 24) | (ri[1] << 16) | ( ri[2] << 8) | (ri[3]));
+                    d1= ((rg[0]<< 24) | (rg[1] << 16) | ( rg[2] << 8) | (rg[3]));
+                    d2= ((rn[0]<< 24) | (rn[1] << 16) | ( rn[2] << 8) | (rn[3]));
+                    d3= ((ri[0]<< 24) | (ri[1] << 16) | ( ri[2] << 8) | (ri[3]));
 
-            s1 = MAKE_IPV4_ADDRESS(rs[0],rs[1],rs[2],rs[3]);
+                    s1 = MAKE_IPV4_ADDRESS(rs[0],rs[1],rs[2],rs[3]);
 
-            wiced_ip_setting_t device_init_ip_settings2 ={
-            .gateway={WICED_IPV4,{.v4=(uint32_t)d1}},
-            .netmask={WICED_IPV4,{.v4=(uint32_t)d2}},
-            .ip_address={WICED_IPV4,{.v4=(uint32_t)d3}},
+                    wiced_ip_setting_t device_init_ip_settings2 ={
+                    .gateway={WICED_IPV4,{.v4=(uint32_t)d1}},
+                    .netmask={WICED_IPV4,{.v4=(uint32_t)d2}},
+                    .ip_address={WICED_IPV4,{.v4=(uint32_t)d3}},
 
-            };
+                    };
 
-            result = wiced_network_up(WICED_STA_INTERFACE, WICED_USE_STATIC_IP, &device_init_ip_settings2);
+                    result = wiced_network_up(WICED_STA_INTERFACE, WICED_USE_STATIC_IP, &device_init_ip_settings2);
 
-            if ( result != WICED_SUCCESS )
-            {
+                    if ( result != WICED_SUCCESS )
+                    {
 
-            wiced_uart_transmit_bytes(WICED_UART_3,("Bringing up network interface failed !\n"),40);
-            }
+                    wiced_uart_transmit_bytes(WICED_UART_3,("Bringing up network interface failed !\n"),40);
+                    }
 
-            /* Create a TCP socket */
-            if ( wiced_tcp_create_socket( &tcp_client_socket, interface ) != WICED_SUCCESS )
-            {
-            wiced_uart_transmit_bytes(WICED_UART_3,("TCP socket creation failed\n"),20);
+                    /* Create a TCP socket */
+                    if ( wiced_tcp_create_socket( &tcp_client_socket, interface ) != WICED_SUCCESS )
+                    {
+                    wiced_uart_transmit_bytes(WICED_UART_3,("TCP socket creation failed\n"),20);
 
-            }
-            /* Bind to the socket */
-            wiced_tcp_bind( &tcp_client_socket, TCP_SERVER_PORT );
+                    }
+                    /* Bind to the socket */
+                    wiced_tcp_bind( &tcp_client_socket, TCP_SERVER_PORT );
 
-            /* Register a function to send TCP packets */
-            wiced_rtos_register_timed_event( &tcp_client_event, WICED_NETWORKING_WORKER_THREAD, &tcp_client, TCP_CLIENT_INTERVAL * SECONDS, 0 );
-         }
+                    /* Register a function to send TCP packets */
+                    wiced_rtos_register_timed_event( &tcp_client_event, WICED_NETWORKING_WORKER_THREAD, &tcp_client, TCP_CLIENT_INTERVAL * SECONDS, 0 );
+                 }
+
+
     while ( 1 )
     {
         //levantar el servicio tcp
-
          if( wiced_uart_receive_bytes( WICED_UART_3, &RX, &expected_data_size, WICED_NEVER_TIMEOUT ) == WICED_SUCCESS ){
             char com[2];
 
@@ -283,6 +281,7 @@ void application_start( )
                  wiced_rtos_delay_milliseconds( TCP_CLIENT_INTERVAL * SECONDS );
                  wiced_network_resume();
          }
+
 
 
     }
@@ -405,6 +404,11 @@ static wiced_result_t tcp_client( void )
     if ( result != WICED_SUCCESS )
     {
         //wiced_framework_reboot();
+        try_n++;
+        if(try_n==0xFF){
+            wiced_framework_reboot();
+        }
+
         return WICED_ERROR;
     }
 
@@ -412,6 +416,11 @@ static wiced_result_t tcp_client( void )
     if(result!=WICED_SUCCESS)
     {
         //wiced_framework_reboot();
+        try_n++;
+        if(try_n==0xFF){
+            wiced_framework_reboot();
+        }
+
         wiced_tcp_delete_socket(&socket); /* Delete socket and return*/
         return WICED_ERROR;
     }
@@ -420,6 +429,11 @@ static wiced_result_t tcp_client( void )
     if ( result != WICED_SUCCESS )
     {
         //wiced_framework_reboot();
+        try_n++;
+        if(try_n==0xFF){
+            wiced_framework_reboot();
+        }
+
         wiced_tcp_delete_socket(&socket);
         return WICED_ERROR;
 
